@@ -6,26 +6,37 @@ import {
 } from "playwright-core";
 import { Browserbase } from "@browserbasehq/sdk";
 import { BrowserSession } from "./types.js";
+import { Config } from "../config.js";
 
 // Global State specific to sessions
 const browsers = new Map<string, BrowserSession>();
 let defaultBrowserSession: BrowserSession | null = null;
 const defaultSessionId = "default"; // Consistent ID for the default session
+let globalConfig: Config = { proxies: false }; // Default config
 
 // Helper Functions
+
+// Function to set global config
+function setConfig(config: Config) {
+  globalConfig = { ...globalConfig, ...config };
+}
 
 // Function to create a new browser session
 async function createNewBrowserSession(
   newSessionId: string,
+  config?: Config,
 ): Promise<BrowserSession> {
   console.error(`Creating new browser session with ID: ${newSessionId}`);
   const bb = new Browserbase({
     apiKey: process.env.BROWSERBASE_API_KEY!,
   });
 
+  // Use passed config or fall back to global config
+  const currConfig = config || globalConfig;
+
   const session = await bb.sessions.create({
     projectId: process.env.BROWSERBASE_PROJECT_ID!,
-    proxies: true, // Consider making configurable
+    proxies: currConfig.proxies, // Use config value
   });
   console.error("Browserbase session created:", session.id);
 
@@ -291,4 +302,5 @@ export {
   ensureBrowserSession,
   getSession,
   closeAllSessions,
+  setConfig,
 }; 

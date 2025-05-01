@@ -10,63 +10,67 @@ import { TOOLS } from "./tools/definitions.js";
 import { handleToolCall, setServerInstance } from "./tools/handlers.js";
 import { handleListResources, handleReadResource } from "./resources/handlers.js";
 
-// Server Setup and Configuration
-const server = new Server(
-  {
-    name: "mcp-servers/playwright-browserbase",
-    version: "0.1.0",
-  },
-  {
-    capabilities: {
-      resources: {
-        list: true,
-        read: true,
-      },
-      tools: {
-        list: true,
-        call: true,
-      },
-      notifications: {
+export async function createServer(): Promise<Server> {
+  // Server Setup and Configuration
+  const server = new Server(
+    {
+      name: "mcp-servers/playwright-browserbase",
+      version: "0.1.0",
+    },
+    {
+      capabilities: {
         resources: {
-          list_changed: true,
+          list: true,
+          read: true,
+        },
+        tools: {
+          list: true,
+          call: true,
+        },
+        notifications: {
+          resources: {
+            list_changed: true,
+          },
         },
       },
     },
-  },
-);
+  );
 
-// Inject server instance into tool handler module (for notifications)
-setServerInstance(server);
+  // Inject server instance into tool handler module (for notifications)
+  setServerInstance(server);
 
-// --- Request Handlers Setup ---
+  // --- Request Handlers Setup ---
 
-// List Resources
-server.setRequestHandler(ListResourcesRequestSchema, handleListResources);
+  // List Resources
+  server.setRequestHandler(ListResourcesRequestSchema, handleListResources);
 
-// Read Resource
-server.setRequestHandler(ReadResourceRequestSchema, handleReadResource);
+  // Read Resource
+  server.setRequestHandler(ReadResourceRequestSchema, handleReadResource);
 
-// List Tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  console.error("Handling ListTools request.");
-  return { tools: TOOLS };
-});
+  // List Tools
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    console.error("Handling ListTools request.");
+    return { tools: TOOLS };
+  });
 
-// Call Tool
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  console.error(`Handling CallTool request for tool: ${request.params.name}`);
-  // Delegate the actual tool execution to the handler function
-  return handleToolCall(request.params.name, request.params.arguments ?? {});
-});
+  // Call Tool
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    console.error(`Handling CallTool request for tool: ${request.params.name}`);
+    // Delegate the actual tool execution to the handler function
+    return handleToolCall(request.params.name, request.params.arguments ?? {});
+  });
 
+  return server;
+}
 // Server Initialization Function
 export async function runServer() {
   try {
     console.error("Initializing server transport...");
     const transport = new StdioServerTransport();
+    const server = await createServer();
     console.error("Connecting server...");
     await server.connect(transport);
-    console.error("Playwright MCP server connected via stdio and ready.");
+    console.error("Browserbase MCP server connected via stdio and ready.");
     // Optional pre-warming could be added here if needed,
     // possibly by calling ensureBrowserSession from sessionManager
   } catch (error) {
