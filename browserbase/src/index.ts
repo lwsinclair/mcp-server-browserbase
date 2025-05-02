@@ -4,13 +4,12 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  CallToolResult,
+  ImageContent,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
-  CallToolResult,
   TextContent,
-  ImageContent,
-  Tool,
 } from "@modelcontextprotocol/sdk/types.js";
 import {
   chromium,
@@ -19,8 +18,13 @@ import {
   errors as PlaywrightErrors,
 } from "playwright-core";
 import { Browserbase } from "@browserbasehq/sdk";
-import { closeAllSessions } from "./sessionManager.js"; // Import for shutdown
-// import { runServer } from "./server.js"; // Import the main server logic
+// import { TOOLS } from "./tools/definitions.js";
+// import { handleToolCall } from "./tools/tabs.js";
+import { setServerInstance } from "./tools/handlers.js";
+import { handleListResources, handleReadResource } from "./resources/handlers.js";
+import { closeAllSessions, setConfig } from "./sessionManager.js";
+import type { Tool } from "@modelcontextprotocol/sdk/types.js";
+import { Config } from "../config.js";
 
 // Environment variables configuration
 const requiredEnvVars = {
@@ -1331,26 +1335,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   return handleToolCall(request.params.name, request.params.arguments ?? {}); // Removed asterisks around request
 });
 
-// 8. Server Initialization
-async function runServer() {
-  // Removed double asterisks
-  try {
-    console.error("Initializing server transport...");
-    const transport = new StdioServerTransport();
-    console.error("Connecting server...");
-    await server.connect(transport);
-    console.error("Playwright MCP server connected via stdio and ready.");
-    // Optionally, try to pre-warm the default browser session
-    // console.error("Pre-warming default browser session...");
-    // await ensureBrowserSession();
-    // console.error("Default browser session pre-warmed.");
-  } catch (error) {
-    console.error(
-      `Failed to start or connect server: ${(error as Error).message}`
-    );
-    process.exit(1); // Exit if server fails to start
-  }
-}
+// // 8. Server Initialization
+// async function runServer() {
+//   // Removed double asterisks
+//   try {
+//     console.error("Initializing server transport...");
+//     const transport = new StdioServerTransport();
+//     console.error("Connecting server...");
+//     await server.connect(transport);
+//     console.error("Playwright MCP server connected via stdio and ready.");
+//     // Optionally, try to pre-warm the default browser session
+//     // console.error("Pre-warming default browser session...");
+//     // await ensureBrowserSession();
+//     // console.error("Default browser session pre-warmed.");
+//   } catch (error) {
+//     console.error(
+//       `Failed to start or connect server: ${(error as Error).message}`
+//     );
+//     process.exit(1); // Exit if server fails to start
+//   }
+// }
 
 // Graceful shutdown handling
 const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
@@ -1390,9 +1394,70 @@ Received ${signal}. Shutting down gracefully...`); // Removed asterisks around s
   });
 });
 
-// Start the server
-runServer().catch((err: Error) => {
-  // Removed asterisks around err, removed double asterisks around runServer
-  console.error("Server execution failed:", err); // Removed asterisks around err
-  process.exit(1);
-});
+export async function createServer(config: Config): Promise<Server> {
+  setConfig(config);
+
+  // Server Setup and Configuration
+  const server = new Server(
+    {
+      name: "mcp-servers/playwright-browserbase",
+      version: "0.1.0",
+    },
+    {
+      capabilities: {
+        resources: {
+          list: true,
+          read: true,
+        },
+        tools: {
+          list: true,
+          call: true,
+        },
+        notifications: {
+          resources: {
+            list_changed: true,
+          },
+        },
+      },
+    },
+  );
+
+  // Inject server instance into tool handler module (for notifications)
+  setServerInstance(server);
+
+  // --- Request Handlers Setup ---
+
+  // List Resources
+  server.setRequestHandler(ListResourcesRequestSchema, handleListResources);
+
+  // Read Resource
+  server.setRequestHandler(ReadResourceRequestSchema, handleReadResource);
+
+  // List Tools
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    console.error("Handling ListTools request.");
+    return { tools: TOOLS };
+  });
+
+  // Call Tool
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    console.error(`Handling CallTool request for tool: ${request.params.name}`);
+    // Delegate the actual tool execution to the handler function
+    return handleToolCall(request.params.name, request.params.arguments ?? {});
+  });
+  
+  const oldClose = server.close.bind(server);
+
+  server.close = async () => {
+    await closeAllSessions();
+    await oldClose();
+  }
+
+  return server;
+}
+// // Start the server
+// runServer().catch((err: Error) => {
+//   // Removed asterisks around err, removed double asterisks around runServer
+//   console.error("Server execution failed:", err); // Removed asterisks around err
+//   process.exit(1);
+// });
